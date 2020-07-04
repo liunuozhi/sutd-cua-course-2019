@@ -1,4 +1,4 @@
-# My Computational Urban Analysis Repository
+# Explore Wikipedia locations in Singapore
 
 This repo holdes my final project for 02.522. Computatioinal Urban Analysis at SUTD. 
 
