@@ -1,0 +1,73 @@
+---
+title: "session5"
+output: github_document
+---
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(broom)
+```
+
+```{r}
+sales <- readRDS(here::here("data/sales.rds"))
+```
+
+## Visualize 
+
+```{r}
+sales %>% 
+  select(floor_area_sqm, remaining_lease, lease_commence_date, resale_price) %>% 
+  pairs()
+```
+
+```{r}
+sales %>% 
+  select(floor_area_sqm, remaining_lease, lease_commence_date, resale_price) %>% 
+  sample_frac(0.05) %>%  # <=== just taking a 5% sample
+  pairs()
+```
+
+## Correlation
+
+```{r}
+cor(sales$floor_area_sqm, sales$resale_price, method = "pearson")
+```
+
+```{r}
+cor(sales$floor_area_sqm, sales$resale_price, method = "spearman")
+```
+
+```{r}
+cor(as.integer(sales$storey_range), sales$resale_price, method = "spearman")
+```
+
+## Regression
+
+```{r}
+sales_2016 <- sales %>% filter(month > "2015-12-01" & month < "2017-01-01")
+ols <- lm(resale_price ~ floor_area_sqm, sales_2016)
+```
+
+```{r}
+ols
+```
+
+```{r}
+glance(ols)
+```
+
+```{r}
+tidy(ols)
+```
+
+```{r}
+sales_ols <- augment(ols, data = sales_2016)
+sales_ols
+```
+
+```{r}
+sales_ols %>% 
+  ggplot(aes(x = .resid)) +
+  geom_histogram(bins = 50)
+```
+

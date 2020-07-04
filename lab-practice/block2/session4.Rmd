@@ -1,0 +1,128 @@
+---
+title: "session4"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(infer)
+```
+
+## Sampling resale transaction
+
+### Population mean method 1
+
+```{r}
+sales <- readRDS(here::here("data/sales.rds"))
+
+mu <- sales %>% summarise(stat = mean(resale_price))
+mu # mean of population
+```
+
+### Population mean method 2
+
+```{r}
+sales %>% 
+  specify(response = resale_price) %>% 
+  calculate(stat = "mean")
+```
+
+
+### sample mean (n = 1, size = 100)
+
+```{r}
+# sample mean
+sales %>% 
+  sample_n(100) %>% 
+  summarise(stat = mean(resale_price))
+```
+
+### sample mean (n = 500, size = 100) / method 1
+
+```{r}
+sample_mean <- function(dataset, sampleSize=100) {
+  dataset %>% 
+    sample_n(sampleSize) %>% 
+    summarise(stat = mean(resale_price))
+}
+
+sampled_means <- rerun(500, sample_mean(sales)) %>% bind_rows()
+```
+
+```{r}
+# sample mean for 500 times
+sampled_means %>% 
+  ggplot() +
+  geom_histogram(aes(stat, ..density..)) +
+  geom_vline(color = "red", xintercept = mu$stat)
+```
+
+### sample mean (n = 500, size = 100) / method 2
+
+```{r}
+resample_500 <- rep_sample_n(sales, 100, reps = 500) # resample for 500 times
+sampled_means_500 <- resample_500 %>% 
+  group_by(replicate) %>% 
+  summarise(stat = mean(resale_price)) # get resample means
+```
+
+```{r}
+sampled_means_500 %>% 
+  ggplot() +
+  geom_histogram(aes(x = stat, y = ..density..)) +
+  geom_vline(color = "red", xintercept = mu$stat)
+```
+
+## Confidence intervals & boostrap resampling
+
+## Comparing means between groups
+
+### Queenstown & Marine Parade / mean
+
+```{r}
+town_means <- sales %>% 
+  filter(town == "QUEENSTOWN" | town == "MARINE PARADE") %>% 
+  group_by(town) %>% 
+  summarise(stat = mean(resale_price))
+
+town_means
+```
+
+```{r}
+ggplot() +
+  geom_histogram(
+    data = sales %>% 
+      filter(town == "QUEENSTOWN" | town == "MARINE PARADE"),
+    aes(resale_price, ..density.., fill=town), 
+    position = "dodge"
+  ) +
+  
+  geom_vline(
+    data = town_means,
+    aes(xintercept = stat, color = town)
+  )
+```
+
+```{r}
+bstrp_price_queenstown <- sales %>% 
+  filter(town == "QUEENSTOWN") %>% 
+  # infer
+  specify(response = resale_price) %>% 
+  generate(reps = 500) %>% 
+  calculate(stat = "mean")
+
+bstrp_price_queenstown %>% 
+  visualise()
+```
+
+```{r}
+bstrp_price_queenstown_ci <- bstrp_price_queenstown %>% 
+  get_ci()
+
+bstrp_price_queenstown_ci
+```
+
+

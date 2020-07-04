@@ -1,0 +1,282 @@
+---
+title: "R Notebook"
+output: github_document
+---
+# Block 1 Assignment
+
+Liu Nuozhi
+
+## Setup
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(skimr)
+library(ggplot2)
+library(e1071)
+library(lubridate)
+```
+
+```{r}
+sales <- readRDS(here::here("data/sales.rds"))
+```
+
+```{r}
+sales %>% glimpse()
+```
+
+## Question 1
+
+Summarize the different continuous variables (area, price, remaining lease) as well as the nominal/ordinal variables (month, flat_type, town, flat_model, storey_range), summarize these variables in both table (stats on central tendency and distribution) and visual form.
+
+```{r}
+# summarize these variables in stats
+skim(sales)
+```
+
+```{r}
+# area, price, remaining lease
+
+draw_dist <- function(data, col_name, binwidth = 5){
+  plot <- data %>% 
+    ggplot(aes(y=..density.., !!as.name(col_name))) +
+    geom_histogram(binwidth = binwidth)
+  return(plot)
+}
+  
+
+```
+
+### Area
+
+The distribution of area is varied, which may have impact by government and policy.
+
+```{r}
+area_distribution <- draw_dist(sales, "floor_area_sqm", 5)
+area_distribution
+```
+
+```{r}
+kurtosis(sales$floor_area_sqm)
+skewness(sales$floor_area_sqm)
+```
+
+### Price
+
+The distribution of resale price is highly skewed. It indicated that less higher pricing distributed on the plot, which may caused by government regulation on HDB price control in order to lower the housing price.
+
+```{r}
+price_distribution <- draw_dist(sales, "resale_price", 10000)
+price_distribution
+```
+
+```{r}
+kurtosis(sales$resale_price)
+skewness(sales$resale_price)
+```
+
+### remaining lease
+
+The distribution of remaining lease is quit varied, maybe because of different construction date.
+
+```{r}
+lease_distribution <- draw_dist(sales, "remaining_lease", 2)
+lease_distribution
+```
+
+```{r}
+kurtosis(sales$remaining_lease)
+skewness(sales$remaining_lease)
+```
+
+### month
+
+The distributino of month is much more even, compared to other variable. It can show the suppy of housing will be will control and restrict.
+
+```{r}
+sales %>% 
+  mutate(m = lubridate::month(month)) %>% 
+  group_by(m) %>% 
+  ggplot(aes(m)) +
+  geom_bar()
+```
+
+### flat_type
+
+Most flat type would be 3-room, 4-room and 5-room.
+
+```{r}
+sales %>% 
+  ggplot(aes(flat_type)) +
+  geom_bar()
+```
+
+
+### town
+
+Jurong West, Woodlands and Sengkang will has the largest number of housing, while Bukit Timah, Marina Parade and Central area has the least. It may because of the more central Singapore, the land is more scarce.
+
+```{r}
+sales %>% 
+  ggplot(aes(fct_infreq(town))) +
+  geom_bar() +
+  coord_flip()
+```
+
+### flat_model
+
+```{r}
+sales %>% 
+  ggplot(aes(fct_infreq(flat_model))) +
+  geom_bar() +
+  coord_flip()
+```
+
+
+### storey_range
+
+```{r}
+sales %>% 
+  ggplot(aes(fct_infreq(storey_range))) +
+  geom_bar() +
+  coord_flip()
+```
+
+## Question 2
+
+Analyze the distribution of (some of) these variables for different subsets of the data. For example, explore the difference between towns, or between flat types.
+
+### difference between towns
+
+```{r}
+sales %>% 
+  ggplot(aes(x = fct_reorder(town, floor_area_sqm), y = floor_area_sqm)) + 
+  geom_boxplot() +
+  coord_flip()
+```
+
+Housing in Pasir Ris, Sembawang, Choa Chu Kang tends to have larger area. Housing in Kallang may generally small, but few of them are very large. 
+
+```{r}
+sales %>% 
+  ggplot(aes(x = fct_reorder(town, resale_price), y = resale_price)) + 
+  geom_boxplot() +
+  coord_flip()
+```
+
+Central area has higher housing pricing. Apart from central districts, other towns have more even average of housing price.
+
+### difference between flat types
+
+```{r}
+sales %>% 
+  ggplot(aes(x = fct_reorder(storey_range, resale_price), y = resale_price)) +
+  geom_boxplot() +
+  coord_flip()
+  
+  # facet_wrap(~ flat_type)
+```
+
+Storey and resale price have postive relation, the higher the level, the more expensive the price. However, there may exist big gaps between 16 to 21, and 40 to 48. Once over 18, the pricing surges a large amount.
+
+
+## Question 3
+
+Analyze the distribution of at least one variable for unique combinations of town and flat_type (for each town, for each flat type: Ang Mo Kio, 1 room; Ang Mo Kio 2 room; etc.)
+
+```{r}
+sales %>% 
+  group_by(town) %>% 
+  skim(resale_price)
+```
+
+```{r}
+sales %>% 
+  group_by(flat_type) %>% 
+  skim(resale_price)
+```
+
+```{r}
+draw_price_each_town <- function(data, town_name){
+  plot <- data %>% 
+    filter(town == town_name) %>% 
+    ggplot() +
+    geom_histogram(aes(resale_price)) +
+    facet_wrap(~flat_type)
+  return(plot)
+}
+
+```
+
+```{r}
+draw_price_each_town(sales, "ANG MO KIO")
+```
+
+```{r}
+sales %>% 
+  filter(town == "ANG MO KIO") %>% 
+  ggplot() +
+  geom_histogram(aes(resale_price, fill = flat_type))
+```
+
+Most of housing in Ang Mo Kio is 3-room type.
+
+```{r}
+draw_price_each_town(sales, "BISHAN")
+```
+
+```{r}
+sales %>% 
+  filter(town == "BISHAN") %>% 
+  ggplot() +
+  geom_histogram(aes(resale_price, fill = flat_type))
+```
+
+In Bishan, there are more 4-room type of housing are provided.
+
+```{r}
+draw_price_each_town(sales, "BUKIT TIMAH")
+
+```
+
+```{r}
+sales %>% 
+  filter(town == "BUKIT TIMAH") %>% 
+  ggplot() +
+  geom_histogram(aes(resale_price, fill = flat_type))
+```
+
+Bukit Timah has more even proportion of different types of housing ranging from lower price to higher price.
+
+## Question 4
+Analyze change in resale price per square meter over time. Use a 6-month moving average to do so
+
+```{r}
+library(TTR)
+```
+
+```{r}
+# group by year month
+ym_sales <- sales %>% 
+  mutate(price_per_sqm = resale_price / floor_area_sqm) %>% 
+  mutate(ym = zoo::as.yearmon(month)) %>% 
+  group_by(ym) %>% 
+  summarise(ym_price_sum = mean(price_per_sqm))
+# 
+# ym_sales %>% 
+#   ggplot(aes(ym, ym_price_sum)) + geom_path()
+```
+
+```{r}
+ym_sales %>% 
+  mutate(
+    mv_avrg = SMA(ym_sales$ym_price_sum, 6)
+  ) %>% 
+  ggplot() + geom_path(aes(ym, mv_avrg))
+```
+
+From the moving average, during 2017 to 2018, the price went higher, then kept falling down.
+
+
+
+
+

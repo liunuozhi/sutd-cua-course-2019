@@ -1,0 +1,69 @@
+---
+title: "week2"
+author: "Ronnie"
+date: "2/6/2020"
+output: github_document
+---
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(forcats)
+```
+
+```{r}
+sales <- read_csv(here::here("data/resale-flat-prices-based-on-registration-date-from-jan-2015-onwards.csv"))
+```
+
+```{r}
+sales %>% glimpse()
+```
+
+```{r}
+sales <- sales %>% 
+  mutate(month = ymd(month, truncated = 1),
+         flat_type = as_factor(flat_type),
+         storey_range = as_factor(storey_range),
+         flat_model = as_factor(flat_model))
+```
+
+What is the earlier lease commencement date and where are these flats located?
+```{r}
+sales %>% arrange(desc(lease_commence_date)) %>% 
+  select(town, lease_commence_date)
+```
+
+What are the largest HDB flats in Singapore? How much did they sell for?
+```{r}
+sales %>% 
+  arrange(floor_area_sqm) %>% 
+  select(town, floor_area_sqm)
+```
+
+What is the most expensive flat in Punggol?
+```{r}
+sales %>% 
+  filter(town == "PUNGGOL") %>% 
+  arrange(desc(resale_price)) %>% 
+  select(town, block, street_name, resale_price)
+```
+
+Which town has, on average, the largest flats (by floor area)?
+```{r}
+sales %>% 
+  group_by(town) %>% 
+  summarise(average_area = mean(floor_area_sqm)) %>% 
+  arrange(desc(average_area))
+```
+
+Which town has, on average, the cheapest flats per square meter?
+```{r}
+sales %>%
+  mutate(
+    price_per_sqr_m = resale_price / floor_area_sqm
+  ) %>% 
+  group_by(town) %>% 
+  summarise(average_price_per_sqr = mean(price_per_sqr_m)) %>% 
+  arrange(average_price_per_sqr)
+```
+

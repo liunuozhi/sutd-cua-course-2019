@@ -1,0 +1,48 @@
+---
+title: "session9 - Spatial clustering"
+author: "Ronnie"
+date: "4/2/2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tmap)
+library(sf)
+```
+
+
+## load data
+
+```{r}
+resale <- readRDS(here::here("data/resale_with_geom.rds"))
+
+set.seed(13)
+resale %>% 
+  sample_n(5000) %>%
+  tm_shape() + tm_dots(col = "town")
+```
+
+```{r}
+set.seed(13)
+resale_sample <- sample_n(resale, 5000)
+```
+
+```{r}
+library(dbscan)
+coordinates_resale <- resale_sample %>% st_coordinates()  # we only need a matrix of the actual coordinates for now
+kNNdistplot(coordinates_resale, k = 30)
+```
+```{r}
+resale_sample$geographical_cluster <- dbscan(coordinates_resale, eps = 800, minPts = 30) %>% 
+  pluck('cluster') %>% as.character()
+
+resale_sample %>% 
+  sample_n(500) %>% 
+  tm_shape() + tm_text(text = "geographical_cluster", col = "town")
+```
+

@@ -1,0 +1,65 @@
+---
+title: "session-6"
+author: "Ronnie"
+date: "3/26/2020"
+output: github_document
+---
+```{r}
+library(tidyverse)
+library(psych)
+```
+
+
+```{r}
+planning_areas <- read_csv(here::here("data/planning_areas.csv"))
+fa <- planning_areas %>% 
+  column_to_rownames(var = "planning_area") %>% 
+  select(starts_with("age"), 
+         starts_with("occupation"), 
+         starts_with("area"), 
+         starts_with("dwelling"), 
+         starts_with("hh")) %>% 
+  principal(nfactors = 2, rotate = "varimax") %>% 
+  pluck('scores') %>% 
+  unclass() %>% 
+  as_tibble(rownames = "planning_area")
+
+fa %>%
+  ggplot(aes(x = RC1, y = RC2)) + geom_text(aes(label = planning_area))
+```
+
+```{r}
+cluster_data <- fa %>% # remove planning_area column so we are left with only 'data' columns
+  column_to_rownames(var = "planning_area")
+
+kmeans_clusters <- kmeans(cluster_data, centers = 10, nstart = 50)
+
+kmeans_clusters
+```
+
+```{r}
+library(factoextra)
+fviz_cluster(kmeans_clusters, data = cluster_data)
+```
+
+```{r}
+hierarchical_clusters <- cluster_data %>% 
+  dist() %>% 
+  hclust() 
+
+hierarchical_clusters %>% fviz_dend(k = 4, cex = 0.5)
+```
+
+```{r}
+hierarchical_clusters_k4 <- cutree(hierarchical_clusters, k = 4)
+fviz_cluster(list(data = cluster_data, cluster = hierarchical_clusters_k4))
+```
+
+```{r}
+library(dbscan)
+```
+```{r}
+kNNdistplot(cluster_data, k = 3)
+abline(h=0.5, col = "red", lty=2)
+```
+

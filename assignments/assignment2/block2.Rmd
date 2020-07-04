@@ -1,0 +1,537 @@
+---
+title: "block2"
+author: "Ronnie"
+date: "2/22/2020"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 3
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r message=FALSE, warning=FALSE, include = FALSE}
+library(tidyverse)
+library(infer)
+library(broom)
+library(e1071)
+```
+
+## Qustion 1
+
+```{r message=FALSE, warning=FALSE, include = FALSE}
+sales <- readRDS(here::here("data/sales.rds"))
+
+flat_t3 <- sales %>% # 3 room (storeys 04-06 / 07-09)
+  filter(
+    flat_type == "3 ROOM"
+  ) %>% 
+  filter(
+    storey_range == "04 TO 06" | storey_range == "07 TO 09"
+  )
+```
+
+### Analysis of 3 room (storeys 04-06 / 07-09)
+
+- **Mean of 3 room (storeys 04-06 / 07-09)**
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+flat_t3_means <- flat_t3 %>% 
+  group_by(storey_range) %>% 
+  summarise(stat = mean(resale_price))
+
+flat_t3_means
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+ggplot() +
+  geom_histogram(
+    data = flat_t3,
+    aes(x = resale_price, y = ..density.., fill = storey_range), position = "dodge"
+  ) + 
+  geom_vline(
+    data = flat_t3_means,
+    aes(xintercept = stat, group = storey_range, color = storey_range)
+  )
+```
+
+> The figure shows the difference of 3-room flat between range(4 ~ 6) and range(7 ~ 9), and how data distribute.
+
+- **diff of mean ("04 TO 06", "07 TO 09")**
+
+```{r echo=FALSE}
+mean_obs <- flat_t3 %>% 
+  specify(resale_price ~ storey_range) %>% 
+  calculate(stat = "diff in means", c("04 TO 06", "07 TO 09"))
+
+mean_obs$stat
+```
+
+### Hypothesis Testing: 3 room (storeys 04-06 / 07-09)
+
+| Hypothesis | Description               |
+|------------|---------------------------|
+| H0         | mean("04 TO 06") - mean("07 TO 09") = 0 |
+| H1         | mean("04 TO 06") - mean("07 TO 09") ≠ 0 |
+
+```{r, include=FALSE}
+null_dist <- flat_t3 %>% 
+  specify(resale_price ~ storey_range) %>% 
+  hypothesize(null = "independence") %>% 
+  generate(reps = 1000, type = "permute") %>%
+  calculate(stat = "diff in means", c("04 TO 06", "07 TO 09"))
+
+null_ci <- null_dist %>% 
+  get_ci()
+```
+
+- **Distribution of mean diff**
+
+```{r, warning=FALSE, echo=FALSE}
+null_dist %>% 
+  visualize(bins = 100) +
+  shade_pvalue(obs_stat = mean_obs, direction = "both") +
+  shade_ci(null_ci)
+```
+
+- **p-value**
+
+```{r, echo=FALSE}
+null_dist %>% 
+  get_p_value(obs_stat = mean_obs, direction = "two_sided")
+```
+
+> **Analysis** : The significance is set to 0.05. In this case, the p-value is 0 and smaller than 0.05. So, it rejects `H0`, and indicates that the average price of 3 room flats on storey 04-06 is significantly different from 3 room flats on storey 07-09.
+
+### More hypothesis testing
+
+```{r, echo=FALSE}
+floor_storey <- function(data, storey1, storey2) {
+  flats <- data %>% 
+    filter(
+      flat_type == "3 ROOM"
+    ) %>% 
+    filter(
+      storey_range == storey1 | storey_range == storey2
+    )
+  return(flats)
+}
+
+get_mean_obs <- function(flats, storey1, storey2){
+  mean_obs <- flats %>% 
+    specify(resale_price ~ storey_range) %>% 
+    calculate(stat = "diff in means", c(storey1, storey2))
+  cat("mean_obs: ", mean_obs$stat, "\n")
+  return(mean_obs)
+}
+
+get_null_dist <- function(flats, storey1, storey2) {
+  null_dist <- flats %>% 
+  specify(resale_price ~ storey_range) %>% 
+  hypothesize(null = "independence") %>% 
+  generate(reps = 1000, type = "permute") %>%
+  calculate(stat = "diff in means", c(storey1, storey2))
+  return(null_dist)
+}
+
+get_p <- function(flats, storey1, storey2){
+  
+  n <- flats$storey_range %>% unique() %>% length() # flats need to have two different storey range, n means how many range in the dataset
+  
+  if (n == 2) {
+    # get mean_obs
+    mean_obs <- get_mean_obs(flats, storey1, storey2)
+    
+    # get null dist
+    null_dist <- get_null_dist(flats, storey1, storey2)
+    
+    p_value <- null_dist %>% 
+      get_p_value(obs_stat = mean_obs, direction = "two_sided")
+    cat("p_value: ", p_value$p_value, "\n")
+    
+    if (p_value > 0.05){
+      cat("The average price of 3 room flats on storey ", storey1, " is not significantly different from 3 room flats on storey ", storey2)
+    }
+    
+    
+    return(p_value)    
+  } else {
+    cat("Not Applicable.")
+    return(NULL)
+  }
+}
+
+```
+
+- **Comparing  01 TO 03  and  04 TO 06**
+
+```{r, echo=FALSE}
+storey1 <- "01 TO 03"
+storey2 <- "04 TO 06"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+```
+
+- **Comparing 04 TO 06 and 07 TO 09**
+
+```{r echo=FALSE}
+storey1 <- "04 TO 06"
+storey2 <- "07 TO 09"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+```
+
+- **Comparing 07 TO 09 and 10 TO 12**
+
+```{r echo=FALSE}
+storey1 <- "07 TO 09"
+storey2 <- "10 TO 12"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+```
+
+- **Comparing 10 TO 12 and 13 TO 15**
+
+```{r echo=FALSE}
+storey1 <- "10 TO 12"
+storey2 <- "13 TO 15"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+```
+
+- **Comparing 13 TO 15 and 16 TO 18**
+
+```{r echo=FALSE}
+storey1 <- "13 TO 15"
+storey2 <- "16 TO 18"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+```
+
+- **Comparing 16 TO 18 and 19 TO 21**
+
+```{r echo=FALSE}
+storey1 <- "16 TO 18"
+storey2 <- "19 TO 21"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+
+# get mean_obs
+mean_obs <- get_mean_obs(flats, storey1, storey2)
+
+# get null dist
+null_dist <- get_null_dist(flats, storey1, storey2)
+null_ci <- null_dist %>% get_ci()
+
+null_dist %>% 
+  visualize(bins = 100) +
+  shade_ci(null_ci) +
+  shade_pvalue(obs_stat = mean_obs, direction = "both") 
+```
+
+- **Comparing 19 TO 21 and 22 TO 24**
+
+```{r echo=FALSE}
+storey1 <- "19 TO 21"
+storey2 <- "22 TO 24"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+```
+
+- **Comparing 22 TO 24 and 25 TO 27**
+
+```{r echo=FALSE}
+storey1 <- "22 TO 24"
+storey2 <- "25 TO 27"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+```
+
+- **Comparing 25 TO 27 and 28 TO 30**
+
+```{r echo=FALSE}
+storey1 <- "25 TO 27"
+storey2 <- "28 TO 30"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+```
+
+- **Comparing 28 TO 30 and 31 TO 33**
+
+```{r echo=FALSE, warning=FALSE}
+storey1 <- "28 TO 30"
+storey2 <- "31 TO 33"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+
+# get mean_obs
+mean_obs <- get_mean_obs(flats, storey1, storey2)
+
+# get null dist
+null_dist <- get_null_dist(flats, storey1, storey2)
+null_ci <- null_dist %>% get_ci()
+
+null_dist %>% 
+  visualize(bins = 100) +
+  shade_ci(null_ci) +
+  shade_pvalue(obs_stat = mean_obs, direction = "both") 
+```
+
+- **Comparing 31 TO 33 and 34 TO 36**
+
+```{r echo=FALSE, warning=FALSE}
+storey1 <- "31 TO 33"
+storey2 <- "34 TO 36"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+
+# get mean_obs
+mean_obs <- get_mean_obs(flats, storey1, storey2)
+
+# get null dist
+null_dist <- get_null_dist(flats, storey1, storey2)
+null_ci <- null_dist %>% get_ci()
+
+null_dist %>% 
+  visualize(bins = 100) +
+  shade_ci(null_ci) +
+  shade_pvalue(obs_stat = mean_obs, direction = "both") 
+```
+
+- **Comparing 34 TO 36 and 37 TO 39**
+
+```{r echo=FALSE, warning=FALSE}
+storey1 <- "34 TO 36"
+storey2 <- "37 TO 39"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+
+# get mean_obs
+mean_obs <- get_mean_obs(flats, storey1, storey2)
+
+# get null dist
+null_dist <- get_null_dist(flats, storey1, storey2)
+null_ci <- null_dist %>% get_ci()
+
+null_dist %>% 
+  visualize(bins = 100) +
+  shade_ci(null_ci) +
+  shade_pvalue(obs_stat = mean_obs, direction = "both") 
+```
+
+- **Comparing 37 TO 39 and 40 TO 42**
+
+```{r, warning=FALSE, echo=FALSE}
+storey1 <- "37 TO 39"
+storey2 <- "40 TO 42"
+flats <- floor_storey(sales, storey1, storey2)
+p_value <- get_p(flats, storey1, storey2)
+
+# get mean_obs
+mean_obs <- get_mean_obs(flats, storey1, storey2)
+
+# get null dist
+null_dist <- get_null_dist(flats, storey1, storey2)
+null_ci <- null_dist %>% get_ci()
+
+null_dist %>% 
+  visualize(bins = 100) +
+  shade_ci(null_ci) +
+  shade_pvalue(obs_stat = mean_obs, direction = "both") 
+```
+
+> **Analysis**: From 20 levels, the differenct of price is becoming small, as such the p-value is growing larger in successive groups.
+
+## Question 2
+
+### 1. Experiment with the addition of different continuous and ordinal variables
+
+```{r, include=FALSE}
+sales_2016 <- filter(sales, month > "2015-12-01" & month < "2017-01-01")
+```
+
+```{r}
+sales_2016 <- sales_2016 %>% 
+  mutate(storey_range = fct_relevel(storey_range, 
+                                    storey_range %>% levels() %>% sort()))
+ols <- lm(resale_price ~ storey_range + flat_type + floor_area_sqm + remaining_lease, sales_2016)
+```
+
+```{r}
+glance(ols)
+```
+
+
+```{r}
+sales_ols <- augment(ols, data = sales_2016)
+
+sales_ols %>% 
+  ggplot(aes(x = .resid)) +
+  geom_histogram(aes(y = ..density..), bins = 100) +
+  stat_function(fun = dnorm, args = list(mean = mean(sales_ols$.resid), 
+                                         sd = sd(sales_ols$.resid)),
+                color = "#E69F00", size = 1) +
+  geom_vline(xintercept = mean(sales_ols$.resid), color="red")
+```
+
+```{r, echo=FALSE}
+cat(
+  "Skewness: ", skewness(sales_ols$.resid), "\n",
+  "Kutosis: ", kurtosis(sales_ols$.resid)
+  )
+```
+
+> **Analysis**: The model is highly skewed at 1.4. It may indicate that most data are underestimated. 
+
+### 2. Add the town variable
+
+```{r}
+sales_2016 <- sales_2016 %>% 
+  mutate(town = as.factor(town))
+
+ols <- lm(resale_price ~ storey_range + town + flat_type + floor_area_sqm + remaining_lease, sales_2016)
+```
+
+```{r}
+glance(ols)
+```
+
+
+```{r}
+sales_ols <- augment(ols, data = sales_2016)
+```
+
+```{r}
+sales_ols %>% 
+  ggplot(aes(x = .resid)) +
+  geom_histogram(aes(y = ..density..), bins = 100) +
+  stat_function(fun = dnorm, args = list(mean = mean(sales_ols$.resid), 
+                                         sd = sd(sales_ols$.resid)),
+                color = "#E69F00", size = 1) +
+  geom_vline(xintercept = mean(sales_ols$.resid), color="red")
+```
+
+```{r, echo=FALSE}
+cat(
+  "Skewness: ", skewness(sales_ols$.resid), "\n",
+  "Kutosis: ", kurtosis(sales_ols$.resid)
+  )
+```
+
+> **Analysis**: Although the distributino curve still skewed, but the model improves a lot, comparing to the one without considering town variable.
+
+### 3. Predict for certain needs
+
+Based on your model, try to work through a simple example. Let’s say you have a family in the market for a `3 room flat` in Punggol. They are looking for a flat sized at `67 sq meters` and `95 years` left on the lease. What should they be looking to pay according to your model? Can you explain to them how each of their choices translates into the flat price? Compare your estimate with all known transactions of flats with those characteristics - how correct was your model?
+
+- **Predict**
+
+```{r, include=FALSE}
+storey_range <- levels(sales_2016$storey_range)
+storey_range
+```
+
+```{r, echo=FALSE}
+newData <- storey_range %>% as_tibble()
+newData <- newData %>% mutate(
+  town = "PUNGGOL",
+  flat_type = "3 ROOM",
+  floor_area_sqm = 67,
+  remaining_lease = 95
+)
+```
+
+```{r, echo=FALSE}
+predict <- augment(ols, newdata = newData, type.predict = "response") %>% 
+  select(-town, -flat_type, -floor_area_sqm, -remaining_lease)
+predict
+```
+
+> **Analysis**: the table shows the prediction of 3-room type changes by the storey range. 
+
+```{r}
+real_data <- sales %>%
+  filter(town == "PUNGGOL", flat_type == "3 ROOM", floor_area_sqm == 67, remaining_lease == 95)
+```
+
+```{r}
+ggplot() +
+  geom_point(data = real_data,
+             mapping = aes(x = storey_range, y = resale_price),
+             size = 3,
+             alpha = .4) +
+  geom_point(data = predict,
+             mapping = aes(x = value, y = .fitted), color = "red", 
+             size = 3, 
+             alpha = .4) +
+  coord_flip()
+```
+
+> **Analysis**: Comparing to the real data, the prediction is close to the reality, but all undershoot, except missing data at higher storeys. 
+
+### 4. predict the 2017 prices
+
+```{r}
+sales_2017 <- sales %>%
+  filter(month > "2016-12-01" & month < "2018-01-01")
+predict_2017 <- augment(ols, newdata = sales_2017)
+predict_2016 <- augment(ols, newdata = sales_2016)
+```
+
+```{r, echo=FALSE}
+ggplot() +
+  geom_point(data = predict_2017 %>% filter(.se.fit < 8000),
+             mapping = aes(x = .fitted, y = .se.fit),
+             color = "red",
+             size = 3, 
+             alpha = .01) +
+  geom_point(data = predict_2016 %>% filter(.se.fit < 8000),
+             mapping = aes(x = .fitted, y = .se.fit),
+             size = 3,
+             alpha = .01)
+```
+
+```{r, echo=FALSE}
+ggplot() +
+  geom_histogram(
+    data = predict_2017 %>% filter(.se.fit < 8000),
+    aes(x = .se.fit), binwidth = 50,
+    fill="red",
+    alpha = 0.8)+
+  geom_histogram(
+    data = predict_2016 %>% filter(.se.fit < 8000),
+    aes(.se.fit), binwidth = 50,
+    alpha = 0.8)
+``` 
+
+```{r, echo=FALSE}
+cat(
+  "Mean(2016 prediction): ", mean(predict_2016$.se.fit), "\n",
+  "Mean(2017 prediction): ", mean(predict_2017$.se.fit)
+)
+```
+
+> **Analysis**: Comparing to data of 2016, the error of the data of 2017 goes higher.
+
+### 5. Enhance model
+
+```{r}
+ols <- lm(resale_price ~ storey_range + town * (floor_area_sqm^2) * flat_type * remaining_lease, sales_2016)
+glance(ols)
+```
+
+```{r, echo=FALSE}
+sales_ols <- augment(ols, data = sales_2016)
+```
+
+```{r, echo=FALSE}
+sales_ols %>% 
+  ggplot(aes(x = .resid)) +
+  geom_histogram(aes(y = ..density..), bins = 100) +
+  stat_function(fun = dnorm, args = list(mean = mean(sales_ols$.resid), 
+                                         sd = sd(sales_ols$.resid)),
+                color = "#E69F00", size = 1) +
+  geom_vline(xintercept = mean(sales_ols$.resid), color="red")
+```
+
+> **Analysis:** The related formula `storey_range + town * (floor_area_sqm^2) * flat_type * remaining_lease` also cost longer time to compute. By multiplying different possibly significant variable, the model has R^2 at 0.918, which has much improved about 8% than the linear model (0.848). 

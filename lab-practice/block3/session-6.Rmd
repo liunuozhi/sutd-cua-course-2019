@@ -1,0 +1,174 @@
+---
+title: "session-6"
+author: "Ronnie"
+date: "3/17/2020"
+output: github_document
+---
+
+```{r, echo=FALSE}
+library(tidyverse)
+```
+
+```{r}
+planning_areas <- read_csv(here::here("data/planning_areas.csv"))
+glimpse(planning_areas)
+```
+
+```{r}
+ggplot(planning_areas, aes(area_res, hh_income_gt_17500)) + geom_text(aes(label = planning_area))
+```
+
+## Step 1 : as matrix
+
+```{r}
+pln_area_matrix <- planning_areas %>% 
+  select(area_res, hh_income_gt_17500) %>% 
+  as.matrix()
+
+pln_area_matrix %>% head()
+```
+
+## Step 2: distances matrix
+
+```{r}
+pln_area_dist <- pln_area_matrix %>% 
+  distances::distances() %>% 
+  as.matrix()
+
+pln_area_dist %>% head()
+```
+
+## Step3 : MDS
+
+```{r}
+mds_planning_area <- cmdscale(pln_area_dist) %>% 
+  as_tibble() %>% 
+  rename(Y1 = V1, Y2 = V2)
+
+# add planning area name back
+mds_planning_area <- planning_areas %>% 
+  select(planning_area) %>% 
+  bind_cols(., mds_planning_area)
+
+mds_planning_area %>% head()
+```
+
+```{r}
+ggplot(mds_planning_area, aes(x = Y2, y = -Y1)) + # you might need to flip the axes
+  geom_text(aes(label = planning_area))
+```
+
+```{r}
+library(patchwork)
+p1 <- ggplot(mds_planning_area, aes(x = Y2, y = -Y1)) +
+  geom_text(aes(label = planning_area))
+
+p2 <- ggplot(planning_areas, aes(x = area_res, y = hh_income_gt_17500)) +
+  geom_text(aes(label = planning_area))
+
+p1 | p2
+```
+
+# 6.5 Multidimensional Scaling of Arbitrary Variables (more than two dimensions)
+
+```{r}
+pln_area_matrix <- planning_areas %>% 
+  select(area_res, hh_income_gt_17500, edu_university, occupation_senior_manager_professional, status_unemployed) %>% 
+  as.matrix()
+```
+
+```{r}
+pln_area_matrix <- planning_areas %>% 
+  select(-planning_area) %>% 
+  as.matrix()
+```
+
+```{r}
+pln_area_dist <- distances::distances(pln_area_matrix) %>% as.matrix()
+
+mds_planning_area <- cmdscale(pln_area_dist) %>% 
+  as_tibble() %>% 
+  rename(Y1 = V1, Y2 = V2)
+
+# add planning area name back
+mds_planning_area <- planning_areas %>% 
+  select(planning_area) %>% 
+  bind_cols(., mds_planning_area)
+
+ggplot(mds_planning_area, aes(x = Y1, y = Y2)) + 
+  geom_text(aes(label = planning_area))
+```
+
+## 7.3 PCA with several varibles
+
+```{r}
+library('broom')
+pc <- planning_areas %>% 
+  column_to_rownames(var = "planning_area") %>% 
+  select(starts_with("age"), 
+         starts_with("occupation"), 
+         starts_with("area"), 
+         starts_with("dwelling"), 
+         starts_with("hh")) %>% 
+  prcomp(., center = T, scale. = T)
+```
+
+```{r}
+tidy(pc, "pcs")
+```
+
+```{r}
+tidy(pc, "pcs") %>% 
+  ggplot(aes(x = PC, y = percent)) +
+  geom_line() +
+  geom_text(aes(x = PC, y = percent, label = PC), nudge_y = 0.03)
+```
+
+```{r}
+tidy(pc, "pcs") %>% 
+  ggplot(aes(x = PC, y = cumulative)) +
+  geom_hline(yintercept = 0.9, color = "orange") +
+  geom_line() +
+  geom_text(aes(x = PC, y = cumulative, label = PC), nudge_y = 0.03)
+```
+
+```{r}
+tidy(pc, "variables") %>% 
+  filter(PC < 5) %>% # only show first 4 components
+  ggplot(aes(x = column, y = value)) + 
+  geom_hline(yintercept = 0) + 
+  geom_col(aes(fill=(value >= 0)),
+           show.legend = FALSE) +
+  coord_flip() +
+  facet_grid(~PC)
+```
+
+```{r}
+library("ggfortify")
+autoplot(pc, label=T)
+```
+
+```{r}
+autoplot(pc, label=T, x=3, y=4)
+
+```
+
+
+## Extension
+
+```{r}
+library(psych)
+fa <- planning_areas %>% 
+  column_to_rownames(var = "planning_area") %>% 
+  select(starts_with("age"), 
+         starts_with("occupation"), 
+         starts_with("area"), 
+         starts_with("dwelling"), 
+         starts_with("hh")) %>% 
+ psych:: principal(nfactors = 4, rotate = "varimax")
+```
+
+```{r}
+fa
+```
+

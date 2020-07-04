@@ -1,0 +1,18 @@
+# Conclusion and limitations
+
+## Conclusion
+
+The project starts with asking two questions: 
+
+  - How different between the description of location in Singapore?
+  - Will the difference of description be related to housing price?
+  
+In order to answer these two, the project takes Wikipedia and housing price datasets as objectives. 
+
+Initially, the text mining on Wikipedia provides a big picture of the dataset where schools take a signicant amount of the portions. Then, the document-term matrix generated from n-gram is inputed into topic models. Since TF-IDF returns a relative bad result, the project took LDA method to compute 8 topics which can be interpretated as landmark, public service, recreation, university, school, important buildings, transport and culture. With these topic in conjunction with housing price, the PCA and regression model provied a scope of how different topics incorporate with each other. A potental explaination will be that educational and transport have certain divergence with other types of locations. This divergence may cause the housing price fluctuation.
+
+## Limitations
+
+Although the result provides a certain conclusion and inspiration, since the educational places take a signicant portion of corpus. The topic generated from the Wikipedia dataset may contain some bias on certain types of location, in this case which is school. 
+
+Besides, the principle components on theta value of topic model have been taken into regression model, which may not include a very clear predictable varibles. 

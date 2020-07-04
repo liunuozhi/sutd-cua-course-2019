@@ -1,0 +1,58 @@
+---
+title: "session5"
+output: github_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+
+## 6.2 Multidimensional Scaling of MRT stations
+
+```{r}
+station_distance <- tibble::tribble(
+                  ~STN_NAME, ~YISHUN_MRT_STATION, ~PASIR_RIS_MRT_STATION, ~JURONG_EAST_MRT_STATION, ~TUAS_LINK_MRT_STATION, ~BENCOOLEN_MRT_STATION, ~PUNGGOL_MRT_STATION, ~MARINA_BAY_MRT_STATION, ~DHOBY_GHAUT_MRT_STATION, ~ROCHOR_MRT_STATION, ~UPPER_CHANGI_MRT_STATION,
+                                                        "YISHUN_MRT_STATION",                 "0",     "14165.8028309003",       "14826.8234223324",       "24144.58370996",     "14539.8253530485",   "7955.17551381608",      "17097.0983148766",       "14495.1289232166",  "14014.7715236133",        "17091.9107945143",
+                                                     "PASIR_RIS_MRT_STATION",  "14165.8028309003",                    "0",       "23451.9973340811",     "34950.8745491473",     "13721.3248153691",   "6306.08987347808",      "14983.0092441387",       "14095.3770091796",  "13209.4818715068",         "3712.4090725179",
+                                                   "JURONG_EAST_MRT_STATION",  "14826.8234223324",     "23451.9973340811",                      "0",     "11758.6400823558",     "12613.5429467971",   "19455.8643741636",      "14047.8304857995",       "12175.0907736314",  "12676.1241992151",        "24411.4671044188",
+                                                     "TUAS_LINK_MRT_STATION",    "24144.58370996",     "34950.8745491473",       "11758.6400823558",                    "0",     "24202.2573770791",   "30351.6324743735",      "25305.1676395598",       "23749.9738806756",  "24325.8635170677",        "36124.0377992668",
+                                                     "BENCOOLEN_MRT_STATION",  "14539.8253530485",     "13721.3248153691",       "12613.5429467971",     "24202.2573770791",                    "0",   "13024.8987292155",      "2565.66801256045",       "461.323513564845",  "602.910926685915",        "13240.7330980557",
+                                                       "PUNGGOL_MRT_STATION",  "7955.17551381608",     "6306.08987347808",       "19455.8643741636",     "30351.6324743735",     "13024.8987292155",                  "0",      "15129.4446906282",       "13237.1986125019",  "12423.6186258471",        "9588.13908018742",
+                                                    "MARINA_BAY_MRT_STATION",  "17097.0983148766",     "14983.0092441387",       "14047.8304857995",     "25305.1676395598",     "2565.66801256045",   "15129.4446906282",                     "0",       "2695.76728986719",  "3084.57512743706",        "13883.5893006481",
+                                                   "DHOBY_GHAUT_MRT_STATION",  "14495.1289232166",     "14095.3770091796",       "12175.0907736314",     "23749.9738806756",     "461.323513564845",   "13237.1986125019",      "2695.76728986719",                      "0",   "887.79255969772",        "13673.2848886229",
+                                                        "ROCHOR_MRT_STATION",  "14014.7715236133",     "13209.4818715068",       "12676.1241992151",     "24325.8635170677",     "602.910926685915",   "12423.6186258471",      "3084.57512743706",        "887.79255969772",                 "0",        "12836.5477607036",
+                                                  "UPPER_CHANGI_MRT_STATION",  "17091.9107945143",      "3712.4090725179",       "24411.4671044188",     "36124.0377992668",     "13240.7330980557",   "9588.13908018742",      "13883.5893006481",       "13673.2848886229",  "12836.5477607036",                       "0"
+                  )
+## tibble creation code created with datapasta: very useful for quickly copying small datasets to/from R.
+```
+
+```{r}
+station_distance %>% head()
+```
+
+```{r}
+# convert to matrix (making sure all distances are numeric not character)
+station_distance_matrix <- station_distance %>% 
+  column_to_rownames(var="STN_NAME") %>%
+  mutate_all(as.numeric) %>% 
+  as.matrix()
+
+# perform MDS
+mds_station <- cmdscale(station_distance_matrix) %>% 
+  as_tibble() %>% 
+  rename(Y1 = V1, Y2 = V2)
+
+# add station name to each position
+mds_station <- station_distance %>% 
+  select(STN_NAME) %>% 
+  bind_cols(., mds_station)
+
+mds_station
+```
+
+```{r}
+ggplot(mds_station, aes(x = Y1, y = Y2)) + 
+  geom_text(aes(label = STN_NAME))
+```
+

@@ -1,0 +1,176 @@
+# Topic modeling
+
+In this stage, the trigram will be the input dataset (Corpus), it will be converted into a document-term matrix (DTM) while in this case, the document will refer to the hexagon which collect the Wikipedia articles. The question is how can to categorazie the documents (hexgons) into different topics. For answering this questino , the project turns to topic model for a potential solution. 
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(tidytext)
+library(topicmodels)
+library(broom)
+library(GGally)
+library(tm)
+library(sf)
+library(tmap)
+
+trigram <- read_rds(here::here("project/data/trigram.rds"))
+token <- read_rds(here::here("project/data/token.rds"))
+```
+
+## Corpus
+
+```{r message=FALSE, warning=FALSE}
+word_count <- trigram %>% count(hex_id, gram, sort = T)
+dtm <- cast_dtm(data = word_count,
+         term = gram,
+         document = hex_id,
+         value = n)
+dtm_tidy <- tidy(dtm)
+
+my_stop_words <- tibble(term = c("building", "build", "street", "singapore", "mrt", "station", "mass rapid", "rapid transit", "singapore's", "transit mrt", "underground mass", "school's", "bus", "interchange", "marina", "bay"))
+
+term_more_then_two <-  dtm_tidy %>% count(term) %>% filter(n > 1) %>% pluck("term")
+
+dtm_tidy %>% 
+  filter(term %in% term_more_then_two) %>% # remove term only appear once
+  filter(!str_detect(term, "\\d")) %>% # filter number
+  anti_join(my_stop_words) %>% 
+  count(term, sort = T) %>%
+  ggplot(aes(n)) + 
+  geom_histogram(bins = 100)
+
+dtm_clean <- dtm_tidy %>% 
+  filter(term %in% term_more_then_two) %>% # remove term only appear once
+  filter(!str_detect(term, "\\d")) %>% # filter number
+  anti_join(my_stop_words)
+
+dtm_clean %>% count(term, sort = T)
+
+dtm <- dtm_clean %>% cast_dtm(document, term, count)
+```
+
+## TF-IDF
+
+In information retrieval, tf–idf or TFIDF, short for term frequency–inverse document frequency, is a numerical statistic that is intended to reflect how important a word is to a document in a collection or corpus. It will calculate the weight of importance in the corpus via term frequency and inverse document frequency. The higher tf-idf, the more signicant the word which contribute to the document classifications. 
+
+```{r}
+### TF-IDF
+tfidf <- bind_tf_idf(tbl = dtm_tidy,
+            term = term,
+            document = document,
+            n = count) %>% 
+  arrange(desc(tf_idf))
+
+tfidf %>% 
+  mutate(rank = row_number()) %>% 
+  ggplot(aes(rank, tf_idf)) +
+  geom_line()
+```
+
+However, the plot above show a highly distorted curve which may indicate that the terms may split into two extreme. It either contribute to nothing since most documents contain the word, or the word only appear in a extremely low frequency. In advance, the research will seek for other models. 
+
+## LDA
+
+Topic model is one of popular model applied for natural language processing. It is also called Latent Dirichlet allocation. It assumed that every document is a mixture of topics, and every topic is a mixture of words. The model will estimate both at the same time in order to predict the possible topic. For now, the topic number is set to 8 after few rouds of manual selections.
+
+```{r}
+k <- 8
+wiki_lda <- LDA(dtm, k = k, method = "Gibbs", control = list(seed = 1234))
+wiki_lda
+```
+
+```{r}
+top_terms <- tidy(wiki_lda, matrix="beta") %>% 
+  group_by(topic) %>% 
+  top_n(10, beta) %>% 
+  ungroup() %>% 
+  arrange(topic, -beta)
+
+top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip() +
+  scale_x_reordered()
+
+top_terms <- tidy(wiki_lda, matrix="beta") %>% 
+  group_by(topic) %>% 
+  top_n(100, beta) %>% 
+  ungroup() %>% 
+  arrange(topic, -beta)
+
+top_terms %>% pivot_wider(
+  names_from = topic, values_from = beta
+) %>% 
+  replace(is.na(.), 0) %>%  
+  ggparcoord(., columns = 1:k, alpha = 0.2)
+```
+
+The model returns relatively better result. It can be inferred that there are some distinctions between each topics. The labels are my interpretation according to the words consisting the topics.
+
+| Topic | 1        | 2              | 3          | 4          | 5      | 6                   | 7         | 8       |
+|-------|----------|----------------|------------|------------|--------|---------------------|-----------|---------|
+| Label | Landmark | Public service | Recreation | University | School | Important buildings | Transport | Culture |
+
+- Topic 1: it relates to airport, stadium, marina bay, sports and so on. This topic can be treated as certain landmarks in the city. 
+
+- Topic 2: it associates with police, hospital, service and so on. Regard to that, the label may be the public service. 
+
+- Topic 3: it mentions parks, reservoir, gardens frequently. Based on those keyword, it will be treated as recreational places. 
+
+- Topic 4 & Topic 5: both topics indicate the educational area, while there some nuances which illustrate that topic 4 is more inclined to tertiary education, with topic 5 tending to be the primary education.
+
+- Topic 6: this category consists of court, parliament, art, museum. They are some important building in the city. 
+
+- Topic 7: this topic is associated with transportation, with suggesting mrt station, line, service, center. 
+
+- Topic 8: the words are about cultural element such as chinese, temple, mosque and so on. 
+
+```{r}
+assignments <- augment(wiki_lda, data = dtm)
+assignments <- assignments %>% select(document, .topic) %>% distinct(document, .keep_all = T)
+colnames(assignments)[2] <- "topic"
+```
+
+```{r}
+assignments %>% 
+  ggplot() +
+  geom_histogram(aes(x=topic, y=..density..),
+                 binwidth = 1)
+
+```
+
+### Composition of topics (theta)
+
+Theta is one of the posterior items generated by the model is the per document probabilities of the topics, which represent a distribution of topics over documents. The result displayed is the theta for all topics from all spatial hex units.
+
+```{r}
+theta = posterior(wiki_lda)$topics %>% as.data.frame() %>% 
+   mutate(document = rownames(.)) %>% as_tibble()
+theta %>% head()
+```
+
+## Binding topics with spatial information
+
+```{r}
+wiki_hex <- read_rds(here::here("project/data/wiki_hex.rds"))
+hex <- read_rds(here::here("project/data/rds/hex.rds"))
+
+tmap_mode("view")
+# tm_shape(hex) + tm_polygons(col = "#ffffff", aalpha = 0.5) +
+hex %>% left_join(assignments, by = c("hex_id" = "document")) %>% 
+  filter(!is.na(topic)) %>% 
+  mutate(topic = paste0("topic", topic)) %>% 
+  tm_shape() + tm_polygons(col = "topic", alpha = 0.5) 
+  
+# + tm_shape(wiki_hex %>% select(-pageid)) + tm_dots(alpha=0.5)
+tmap_mode("plot")
+```
+
+From the map, it can tell the central area is dominant by topic 6 (important buildings) with some are topic 8 (culture). Topic 5 (primary education) are more relatively equally distributed in to parts of city, since primary enducation is important to be accessible. While topic 7 (transportation) are more related to few locations like Tampinese and Woodlands. Topic 4 (university) is obviously attached with NTU, NUS, SMU, SUTD and other colleges. 
+
+```{r}
+assignments %>% saveRDS(here::here("project-data/topic.rds"))
+dtm_clean %>% saveRDS(here::here("project-data/dtm.rds"))
+theta %>% saveRDS(here::here("project-data/theta.rds"))
+```

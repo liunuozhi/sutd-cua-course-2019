@@ -1,0 +1,127 @@
+---
+title: "Assignment 5"
+author: "Ronnie"
+date: "4/21/2020"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(sf)
+library(tmap)
+library(broom)
+library(spdep)
+```
+
+```{r message=FALSE, warning=FALSE}
+planning_areas_sf <- st_read(here::here("data/MP14_shp/MP14_PLNG_AREA_NO_SEA_PL.shp")) %>%
+  filter(!(OBJECTID == 49 | OBJECTID == 18)) # remove islands
+
+planning_areas <- read_csv(here::here("data/planning_areas.csv")) %>%
+  left_join(planning_areas_sf, ., by = c("PLN_AREA_N" = "planning_area")) %>%
+  filter(area_hdb > 0) %>%
+  st_buffer(0) # we use this to correct shapefile issues
+
+hex_grid <- planning_areas %>%
+  st_make_grid(st_bbox(.), square = FALSE, cellsize = 1500) %>%
+  st_sf() %>%
+  mutate(hex_id = row_number())
+
+hex_grid <- st_join(hex_grid, planning_areas, largest = T)
+
+
+resale <- readRDS(here::here("data/resale_with_geom.rds"))
+resale_hex <- st_join(resale, hex_grid) %>%
+  st_set_geometry(NULL)
+
+hex_grid <- resale_hex %>%
+  mutate(price_sqm = resale_price / floor_area_sqm) %>%
+  group_by(hex_id) %>%
+  summarise(
+    mean_price = mean(price_sqm),
+    mean_lease = mean(remaining_lease),
+    mean_floor_area = mean(floor_area_sqm)
+  ) %>%
+  left_join(hex_grid, .) %>%
+  filter(mean_price > 0)
+
+tm_shape(hex_grid) + tm_polygons(col = "mean_price")
+```
+
+## Model
+
+```{r message=FALSE, warning=FALSE}
+####### ols
+price_ols <- lm(mean_price ~ hh_income_lt_2000 + edu_university + mean_lease, data = hex_grid)
+
+hex_ols <- augment(price_ols, data = hex_grid) %>%st_as_sf()
+map_ols <- tm_shape(hex_ols) + tm_polygons(col = ".resid", palette = "RdBu")
+
+hex_sp <- as(hex_ols, "Spatial")
+hex_neighbors <- poly2nb(hex_sp)
+hex_weights <- nb2listw(hex_neighbors, style = "W", zero.policy = TRUE)
+hex_ols$.resid_lag <- lag.listw(hex_weights, hex_ols$.resid)
+# ggplot(hex_ols, aes(.resid, .resid_lag)) + geom_point() + geom_smooth()
+
+####### lag
+price_lag <- lagsarlm(mean_price ~ hh_income_lt_2000 + edu_university + mean_lease,
+  data = hex_grid,
+  listw = hex_weights
+)
+hex_grid$resid_lagsarlm <- residuals(price_lag)
+map_lag <- tm_shape(hex_grid) + tm_polygons(col = "resid_lagsarlm", palette = "RdBu")
+
+####### err
+price_error <- errorsarlm(mean_price ~ hh_income_lt_2000 + edu_university + mean_lease,
+  data = hex_grid, listw = hex_weights
+)
+hex_grid$resid_error <- residuals(price_error)
+map_error <- tm_shape(hex_grid) + tm_polygons(col = "resid_error", palette = "RdBu")
+
+tmap_arrange(map_ols, map_lag, map_error)
+```
+
+## Analysis
+
+```{r}
+y_bar <- mean(hex_grid$mean_price)
+SS_tot <- sum((hex_grid$mean_price - y_bar)^2)
+SS_reslag <- sum(hex_grid$resid_lagsarlm^2)
+SS_reserror <- sum(hex_grid$resid_error^2)
+Rsqr_lag <- 1 - (SS_reslag / SS_tot)
+Rsqr_err <- 1 - (SS_reserror / SS_tot)
+cat("Rsqr - Ols:", glance(price_ols)$r.squared, "\n")
+cat("Rsqr - Lag: ", Rsqr_lag, "\n")
+cat("Rsqr - Err: ", Rsqr_err)
+```
+
+```{r}
+glance(price_ols)
+```
+
+```{r}
+summary(price_ols)
+```
+
+```{r message=FALSE, warning=FALSE}
+summary(price_lag)
+```
+
+```{r message=FALSE, warning=FALSE}
+summary(price_error)
+```
+
+|       | Rsqr      | AIC      | Log likelihood | 
+|-------|-----------|----------|----------------|
+| OLS   | 0.7643829 | 2047.993 | -1018.997      |
+| LAG   | 0.8333418 | 2013.7   | -1000.849      |
+| ERROR | 0.8540845 | 2019.5   | -1003.732      |
+
+According to Rsqr which iscoefficient of determination, OLS has a lower number at 0.76, compared to others two models which are over 0.8. Wiht a higher Rsqr, the dependent variable can be predicted wiht less error from the independent variable. Since the `price_ols` will be eliminated from the selection. 
+
+Lower value of AIC suggests "better" model. Hence, it illustrates that `price_lag` (2013.7) has relatively better quality of model, comparing to `price_error` (2019.5). While log-likelihood is the expression that  maximizes to determine optimal values of the estimated coefficients, for this case, the `price_lag` a has higher log-likelihood which indicates a better model. Hence, `price_lag` turns out to be a better choice inbetween all three models. 
+
+

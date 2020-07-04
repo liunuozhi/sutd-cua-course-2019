@@ -1,0 +1,194 @@
+# PCA
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tmap)
+library(tidyverse)
+library(sf)
+library(broom)
+library(skimr)
+library(infer)
+library(GGally)
+library(ggfortify)
+```
+
+```{r}
+theme_light() %>% theme_set()
+
+house_hex <- read_rds(here::here("project-data/house_hex.rds"))
+theta <- read_rds(here::here("project-data/theta.rds"))
+topic <- read_rds(here::here("project-data/topic.rds")) %>% 
+  mutate(topic = paste("topic",topic, sep = "_"))
+```
+
+## Binding topic with housing
+
+This setup is to bind topics with housing, which will filter out some locations with topics but without housing informaiton. It opted out the topic 2 (puublic service) which does not appear in the housing datasets. 
+
+```{r}
+topic <- topic %>% left_join(theta)
+colnames(topic) <- paste( "topic", colnames(topic), sep = "_")
+house_hex <- house_hex %>% left_join(topic, by = c("hex_id" = "topic_document")) %>% 
+  filter(!is.na(topic_topic)) %>% rename(!!"topic":=topic_topic)
+house_hex %>% tm_shape() + tm_polygons(col = "topic")
+bind_data <- house_hex %>% st_set_geometry(NULL)
+```
+
+```{r}
+bind_data %>% head()
+```
+
+## Sample statistic
+
+```{r}
+skim(bind_data)
+```
+
+```{r}
+bind_data %>% 
+  ggplot(aes(fct_reorder(topic, mean_sqr_price), mean_sqr_price)) +
+  geom_boxplot()
+```
+
+The chart and statistics summary above show that there some price-topic relation. Topic 4 (university) shows higher average housing prices. Topic 6 (important buildings) has second highest average housing price. While the housing near topic 8 (culture) has the least housing price. 
+
+### Compare mean price between topics
+
+The hypothesis testing takes topic 5 (School) and topic 6 (Important buildings) as comparison. The null hypothesis assumes that the topics have a same housing price, which is `mean(topic5) - mean(topic6) = 0`. 
+
+```{r}
+topic_mean <- bind_data %>% 
+  filter(topic %in% c("topic_5", "topic_6")) %>% 
+  group_by(topic) %>% 
+  summarise(mean = mean(mean_sqr_price))
+topic_mean
+```
+
+```{r}
+ggplot() +
+  geom_histogram(
+    data = bind_data %>%
+      filter(topic %in% c("topic_5", "topic_6")),
+    mapping = aes(x = mean_sqr_price, group = topic, fill = topic),
+    position = position_dodge()
+  ) +
+  geom_vline(
+    data = topic_mean,
+    mapping = aes(xintercept = mean, group = topic, color = topic)
+  )
+```
+
+```{r}
+bind_data %>% 
+  filter(topic == "topic_5") %>% 
+  specify(response = mean_sqr_price) %>% 
+  generate(reps = 100) %>% 
+  calculate(stat = "mean") %>% 
+  get_ci()
+```
+
+```{r}
+mean_diff <- bind_data %>% 
+  filter(topic %in% c("topic_5", "topic_6")) %>% 
+  specify(formula = mean_sqr_price ~ topic) %>% 
+  calculate(stat = "diff in means", order = c("topic_5", "topic_6"))
+mean_diff
+```
+
+```{r}
+null_distribution <- bind_data %>% 
+  filter(topic %in% c("topic_5", "topic_6")) %>% 
+  specify(formula = mean_sqr_price ~ topic) %>% 
+  hypothesize(null = "independence") %>% 
+  generate(reps = 500, type = "permute") %>% 
+  calculate(stat = "diff in means", order = c("topic_5", "topic_6"))
+
+null_ci <- null_distribution %>% get_ci()
+
+null_distribution %>% 
+  visualise(bins = 100) +
+  shade_p_value(obs_stat = mean_diff, direction = "both") + 
+  shade_ci(null_ci)
+
+null_distribution %>% 
+  get_pvalue(obs_stat = mean_diff, direction = "both")
+```
+
+The significance is set to 0.05. In this case, the p-value is smaller than 0.05. So, it rejects `H0`, and indicates that the average price of topic 5 is significantly different from that of topic 6.
+
+## PCA
+
+```{r message=FALSE, warning=FALSE}
+topic_house <- bind_data
+topic_house %>% select(starts_with("topic_")) %>% head()
+```
+
+To understand more about the dataset, it will use PCA to see how the topics incorporate with each other. The input data with be the theta value of each hexagons (shows above output). The theta value indicates how the data fit with each topics and shows the probabilities.
+
+```{r}
+pc <- topic_house %>% 
+  # select(-mean_price, -mean_area, -topic) %>% 
+  select(starts_with("topic_")) %>% 
+  prcomp(., scale. = T, center = T)
+
+tidy(pc, "pcs")
+
+tidy(pc, "pcs") %>% 
+  ggplot(aes(x = PC, y = percent)) +
+  geom_line() +
+  geom_text(aes(x = PC, y = percent, label = PC), nudge_y = 0.03)
+
+tidy(pc, "pcs") %>% 
+  ggplot(aes(x = PC, y = cumulative)) +
+  geom_hline(yintercept = 0.8, color = "orange") +
+  geom_line() +
+  geom_text(aes(x = PC, y = cumulative, label = PC), nudge_y = 0.03)
+
+tidy(pc, "variables") %>% 
+  filter(PC < 6) %>% # only show first 4 components
+  ggplot(aes(x = column, y = value)) + 
+  geom_hline(yintercept = 0) + 
+  geom_col(aes(fill=(value >= 0)),
+           show.legend = FALSE) +
+  coord_flip() +
+  facet_grid(~PC)
+```
+
+In order to catch 80% of variance, it will set to see the first 5 princle components. Even thought the dimension do not reduce a lot, it provides a scope to see how the topics related. From the first component, the topic 4 (university) and 5 (schools) have negative relations with other topics. With some nuance, topic 7 will be less likely to align with others, which shows in PC2. 
+
+```{r}
+autoplot(pc, label = TRUE, x = 1, y = 2, loadings = T, loadings.label = T, label.size = 3)
+autoplot(pc, label = TRUE, x = 3, y = 4, loadings = T, loadings.label = T, label.size = 3)
+```
+
+From PC1 and PC2 dimension, most topics are close to each other except topic 4, 5, 7. It shows that topic 4 (university) and topic 7 (transport) have negative relations. Topic 5 (schools) also shows relatively negative relation with topic 7. 
+
+From PC3 and PC4, it shows that topic 4 (university) shows either negative or no relation with other topics. A possible reason may be a university can be a isolated area with self functioning place like a university town.  The same feature also appear to topic 7 (transport), because the transportation interchange may take a large area land where other functional places may not be able to be included. 
+
+Topic 1 (landmark), 3 (recreation), 5 (school) and 8 (culture) show a strong relation with each other, the reason may be that Singapore has well mixture of land use. 
+
+```{r}
+pc_topic <- topic_house %>% 
+  augment(pc, .) %>% 
+  select(hex_id, mean_sqr_price, .fittedPC1, .fittedPC2, .fittedPC3, .fittedPC4, .fittedPC5)
+pc_topic %>% head()
+```
+
+## Regression
+
+```{r}
+ols <- lm(mean_sqr_price ~ .fittedPC1+ .fittedPC2+ .fittedPC3+ .fittedPC4+ .fittedPC5, pc_topic)
+glance(ols)
+```
+
+The regression model take on the first 5 principle components which consisting of theta values. The R.squared shows a relative low relation between housing price and topics. 
+
+```{r}
+tidy(ols)
+```
+
+A potential interpretation of the regression model may be that the PC1 and PC2 will have higher estimated housing prices, which the divergence of schols/university/transport and other locations being cateched. This divergence intensify the housing price fluctuation. In other words, if the locations tend to be either educational area or others, the housing prices may show a relative increase or decrease. 
+
+```{r}
+topic_house_ols <- augment(ols, data = topic_house)
+topic_house_ols
+```
