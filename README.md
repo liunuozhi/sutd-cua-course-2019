@@ -1,6 +1,7 @@
 # Explore Wikipedia locations in Singapore
 
 This repo holdes my final project for 02.522. Computatioinal Urban Analysis at SUTD. 
+The project was written in R. You can check the Bookdown [link](https://sutd-cua-course-2019.netlify.app/). 
 
 ## Introduction
 
